@@ -20,4 +20,6 @@ printf "Installing PyTorch with %s\n" "${cudatoolkit}"
 conda install -y -c pytorch-nightly pytorch "${cudatoolkit}"
 
 printf "* Installing torchaudio\n"
-BUILD_SOX=1 python setup.py develop
+export LDFLAGS='-fsanitize=address'
+export BUILD_SOX=1
+python setup.py develop

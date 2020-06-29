@@ -5,8 +5,19 @@
 #include <torchaudio/csrc/sox_io.h>
 #include <torchaudio/csrc/sox_utils.h>
 
+#if defined(__clang__) || defined (__GNUC__)
+# define ATTRIBUTE_NO_SANITIZE_ADDRESS __attribute__((no_sanitize_address))
+#else
+# define ATTRIBUTE_NO_SANITIZE_ADDRESS
+#endif
+
+
+
 namespace torchaudio {
 namespace {
+
+ATTRIBUTE_NO_SANITIZE_ADDRESS
+int bind() {
 
 ////////////////////////////////////////////////////////////////////////////////
 // sox_utils.h
@@ -84,6 +95,11 @@ static auto registerSoxEffects =
                 .catchAllKernel<
                     decltype(sox_effects::apply_effects_file),
                     &sox_effects::apply_effects_file>());
+
+return 0;
+}
+
+static auto bound = bind();
 
 } // namespace
 } // namespace torchaudio

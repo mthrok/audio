@@ -360,6 +360,13 @@ int build_flow_effects(const std::string& file_name,
 } // namespace audio
 } // namespace torch
 
+#if defined(__clang__) || defined (__GNUC__)
+# define ATTRIBUTE_NO_SANITIZE_ADDRESS __attribute__((no_sanitize_address))
+#else
+# define ATTRIBUTE_NO_SANITIZE_ADDRESS
+#endif
+
+ATTRIBUTE_NO_SANITIZE_ADDRESS
 PYBIND11_MODULE(_torchaudio, m) {
   py::class_<torch::audio::SoxEffect>(m, "SoxEffect")
        .def(py::init<>())

@@ -1,9 +1,10 @@
 import argparse
 
 import save_audio_file
+import load_audio_file
 
 
-MODULES = {mod.__name__: mod for mod in [save_audio_file]}
+MODULES = {mod.__name__: mod for mod in [save_audio_file, load_audio_file]}
 
 
 def _parse_args():

@@ -83,12 +83,19 @@ void save_audio_file(
     const std::string& file_name,
     const c10::intrusive_ptr<TensorSignal>& signal,
     const double compression) {
-  const auto tensor = signal->getTensor();
+  save_audio_file2(file_name, *(signal.get()), compression);
+}
+
+void save_audio_file2(
+    const std::string& file_name,
+    const TensorSignal& signal,
+    const double compression) {
+  const auto tensor = signal.getTensor();
 
   validate_input_tensor(tensor);
-
+  torchaudio::sox_utils::TensorSignal signal_ = signal;
   const auto filetype = get_filetype(file_name);
-  const auto signal_info = get_signalinfo(signal.get(), filetype);
+  const auto signal_info = get_signalinfo(&signal_, filetype);
   const auto encoding_info =
       get_encodinginfo(filetype, tensor.dtype(), compression);
 
@@ -107,7 +114,7 @@ void save_audio_file(
   torchaudio::sox_effects_chain::SoxEffectsChain chain(
       /*input_encoding=*/get_encodinginfo("wav", tensor.dtype(), 0.),
       /*output_encoding=*/sf->encoding);
-  chain.addInputTensor(signal.get());
+  chain.addInputTensor(&signal_);
   chain.addOutputFile(sf);
   chain.run();
 }

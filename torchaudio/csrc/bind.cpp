@@ -17,7 +17,7 @@ PYBIND11_MODULE(_torchaudio, m) {
 
   m.def("get_info", &torchaudio::sox_io::get_info, "Gets information about an audio file.");
   m.def("load_audio_file", &torchaudio::sox_io::load_audio_file, "Load audio file into Tensor.");
-  m.def("save_audio_file", &torchaudio::sox_io::save_audio_file, "Save Tensor as audio file.");
+  m.def("save_audio_file", &torchaudio::sox_io::save_audio_file2, "Save Tensor as audio file.");
 
   m.def("apply_effects_tensor", &torchaudio::sox_effects::apply_effects_tensor, "Apply sox effects to Tensor");
   m.def("apply_effects_file", &torchaudio::sox_effects::apply_effects_file, "Apply sox effects to Tensor");

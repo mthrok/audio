@@ -58,7 +58,8 @@ def _get_ela(debug):
 
 
 def _get_srcs():
-    return [str(p) for p in _CSRC_DIR.glob('**/*.cpp')]
+    return [str(p) for p in _CSRC_DIR.glob('**/*.cpp')
+            if (not str(p).endswith('sox.cpp')) and (not str(p).endswith('sox.h'))]
 
 
 def _get_include_dirs():

@@ -14,14 +14,25 @@ MODULES = {
 def _parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        'module', choices=list(MODULES.keys()),
+        '--duration', type=float, default=1.0,
+        help='Duration of audio data/file.',
+    )
+    parser.add_argument(
+        '--num-trials', type=int, default=1000,
+        help='The number of times to run the target function.',
+    )
+    parser.add_argument(
+        '--module', choices=list(MODULES.keys()),
     )
     return parser.parse_args()
 
 
 def main():
     args = _parse_args()
-    MODULES[args.module].run_test()
+    print(args)
+    modules = MODULES.values() if args.module is None else [MODULES[args.module]]
+    for module in modules:
+        module.run_test(num_trials=args.num_trials, duration=args.duration)
 
 
 if __name__ == '__main__':

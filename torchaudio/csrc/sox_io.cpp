@@ -79,6 +79,16 @@ c10::intrusive_ptr<TensorSignal> load_audio_file(
       path, effects, normalize, channels_first);
 }
 
+TensorSignal load_audio_file2(
+    const std::string& path,
+    const int64_t frame_offset,
+    const int64_t num_frames,
+    const bool normalize,
+    const bool channels_first) {
+  TensorSignal ts = *(load_audio_file(path, frame_offset, num_frames, normalize, channels_first).get());
+  return ts;
+}
+
 void save_audio_file(
     const std::string& file_name,
     const c10::intrusive_ptr<TensorSignal>& signal,

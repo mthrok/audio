@@ -30,6 +30,13 @@ c10::intrusive_ptr<torchaudio::sox_utils::TensorSignal> load_audio_file(
     const bool normalize = true,
     const bool channels_first = true);
 
+torchaudio::sox_utils::TensorSignal load_audio_file2(
+    const std::string& path,
+    const int64_t frame_offset = 0,
+    const int64_t num_frames = -1,
+    const bool normalize = true,
+    const bool channels_first = true);
+
 void save_audio_file(
     const std::string& file_name,
     const c10::intrusive_ptr<torchaudio::sox_utils::TensorSignal>& signal,

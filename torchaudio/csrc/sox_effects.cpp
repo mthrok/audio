@@ -50,10 +50,11 @@ void shutdown_sox_effects() {
   }
 }
 
-c10::intrusive_ptr<TensorSignal> apply_effects_tensor(
-    const c10::intrusive_ptr<TensorSignal>& input_signal,
+  
+c10::intrusive_ptr<TensorSignal> apply_effects_tensor_(
+    TensorSignal input_signal,
     std::vector<std::vector<std::string>> effects) {
-  auto in_tensor = input_signal->getTensor();
+  auto in_tensor = input_signal.getTensor();
   validate_input_tensor(in_tensor);
 
   // Create SoxEffectsChain
@@ -67,7 +68,7 @@ c10::intrusive_ptr<TensorSignal> apply_effects_tensor(
   out_buffer.reserve(in_tensor.numel());
 
   // Build and run effects chain
-  chain.addInputTensor(input_signal.get());
+  chain.addInputTensor(&input_signal);
   for (const auto& effect : effects) {
     chain.addEffect(effect);
   }
@@ -75,7 +76,7 @@ c10::intrusive_ptr<TensorSignal> apply_effects_tensor(
   chain.run();
 
   // Create tensor from buffer
-  const auto channels_first = input_signal->getChannelsFirst();
+  const auto channels_first = input_signal.getChannelsFirst();
   auto out_tensor = convert_to_tensor(
       /*buffer=*/out_buffer.data(),
       /*num_samples=*/out_buffer.size(),
@@ -88,6 +89,23 @@ c10::intrusive_ptr<TensorSignal> apply_effects_tensor(
       out_tensor, chain.getOutputSampleRate(), channels_first);
 }
 
+
+c10::intrusive_ptr<TensorSignal> apply_effects_tensor(
+    const c10::intrusive_ptr<TensorSignal>& input_signal,
+    std::vector<std::vector<std::string>> effects) {
+  return apply_effects_tensor_(*(input_signal.get()), effects);
+}
+
+torchaudio::sox_utils::TensorSignal apply_effects_tensor2(
+    torchaudio::sox_utils::TensorSignal input_signal,
+    std::vector<std::vector<std::string>> effects) {
+  return *(apply_effects_tensor_(input_signal, effects).get());
+}
+
+  
+
+
+  
 c10::intrusive_ptr<TensorSignal> apply_effects_file(
     const std::string path,
     std::vector<std::vector<std::string>> effects,

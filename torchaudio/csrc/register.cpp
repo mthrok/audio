@@ -1,6 +1,7 @@
 #ifndef TORCHAUDIO_REGISTER_H
 #define TORCHAUDIO_REGISTER_H
 
+#include <torchaudio/csrc/kaldi.h>
 #include <torchaudio/csrc/sox_effects.h>
 #include <torchaudio/csrc/sox_io.h>
 #include <torchaudio/csrc/sox_utils.h>
@@ -70,5 +71,12 @@ TORCH_LIBRARY(torchaudio, m) {
   m.def(
       "torchaudio::sox_effects_apply_effects_file",
       &torchaudio::sox_effects::apply_effects_file);
+
+  //////////////////////////////////////////////////////////////////////////////
+  // kaldi.h
+  //////////////////////////////////////////////////////////////////////////////
+  m.def(
+      "torchaudio::kaldi_compute_kaldi_pitch_feature",
+      &torchaudio::kaldi::compute_kaldi_pitch_feature);
 }
 #endif

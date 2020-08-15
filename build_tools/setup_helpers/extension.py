@@ -20,20 +20,26 @@ _TP_BASE_DIR = _ROOT_DIR / 'third_party'
 _TP_INSTALL_DIR = _TP_BASE_DIR / 'install'
 
 
-def _get_build_sox():
-    val = os.environ.get('BUILD_SOX', '0')
+def _get_env(key):
+    val = os.environ.get(key, '0')
     trues = ['1', 'true', 'TRUE', 'on', 'ON', 'yes', 'YES']
     falses = ['0', 'false', 'FALSE', 'off', 'OFF', 'no', 'NO']
     if val in trues:
         return True
     if val not in falses:
         print(
-            f'WARNING: Unexpected environment variable value `BUILD_SOX={val}`. '
+            f'WARNING: Unexpected environment variable value `{key}={val}`. '
             f'Expected one of {trues + falses}')
     return False
 
 
-_BUILD_SOX = _get_build_sox()
+_BUILD_SOX = _get_env('BUILD_SOX')
+_BUILD_KALDI_WRAPPER = _get_env('BUILD_KALDI_WRAPPER')
+_KALDI_ROOT = None
+if _BUILD_KALDI_WRAPPER:
+    if 'KALDI_ROOT' not in os.environ:
+        raise RuntimeError('BUILD_KALDI_WRAPPER is enabled but KALDI_ROOT is not defined.')
+    _KALDI_ROOT = Path(os.environ['KALDI_ROOT'])
 
 
 def _get_eca(debug):
@@ -67,6 +73,9 @@ def _get_include_dirs():
     ]
     if _BUILD_SOX:
         dirs.append(str(_TP_INSTALL_DIR / 'include'))
+    if _BUILD_KALDI_WRAPPER:
+        dirs.append(str(_KALDI_ROOT / 'src'))
+        dirs.append(str(_KALDI_ROOT / 'tools' / 'openfst' / 'include'))
     return dirs
 
 
@@ -92,11 +101,31 @@ def _get_extra_objects():
         ]
         for lib in libs:
             objs.append(str(_TP_INSTALL_DIR / 'lib' / lib))
+    if _BUILD_KALDI_WRAPPER:
+        libs = [
+            'tools/openfst/lib/libfst.a',
+            'tools/openfst/lib/libfstfar.a',
+            'tools/openfst/lib/libfstfarscript.a',
+            'tools/openfst/lib/libfstlookahead.a',
+            'tools/openfst/lib/libfstngram.a',
+            'tools/openfst/lib/libfstscript.a',
+            'src/matrix/kaldi-matrix.a',
+            'src/feat/kaldi-feat.a',
+            'src/util/kaldi-util.a',  # not mandatory
+            'src/base/kaldi-base.a',
+        ]
+        for lib in libs:
+            objs.append(str(_KALDI_ROOT / Path(lib)))
     return objs
 
 
 def _get_libraries():
-    return [] if _BUILD_SOX else ['sox']
+    libs = []
+    if _BUILD_SOX:
+        libs.append('sox')
+    libs.append('atlas')
+    libs.append('lapack_atlas')
+    return libs
 
 
 def _build_third_party():

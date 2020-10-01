@@ -15,8 +15,7 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  std::cout << "Performing separation ..." << std::endl; 
-  std::vector<torch::jit::IValue> args{c10::IValue(argv[2]), c10::IValue(argv[3])};
-  module.forward(args);
+  std::cout << "Performing separation ..." << std::endl;
+  module.forward({c10::IValue(argv[2]), c10::IValue(argv[3])});
   std::cout << "Done." << std::endl; 
 }

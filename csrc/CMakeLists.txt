@@ -36,7 +36,10 @@ target_link_libraries(
 install(
   TARGETS
   libtorchaudio
-)
+  )
+
+set(TORCHAUDIO_LIBRARY -Wl,--no-as-needed libtorchaudio -Wl,--as-needed CACHE INTERNAL "")
+
 endif()
 
 ################################################################################

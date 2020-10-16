@@ -5,16 +5,51 @@ from itertools import permutations
 import torch
 
 
+def _power(
+        signal: torch.Tensor,
+        mask: Optional[torch.Tensor] = None):
+    power = signal.pow(2)
+    if mask is None:
+        return power.mean(axis=2)
+    denom = mask.sum(axis=2)
+    return (mask * power).sum(axis=2) / denom
+
+
 def sdr(
+        estimate: torch.Tensor,
+        reference: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Computes signal to distortion ratio (in decibel).
+
+    Args:
+        estimate (torch.Tensor): Estimated (reconstructed) signal.
+            Shape: [batch, channels, time frame]
+        reference (torch.Tensor): Reference signal.
+            Shape: [batch, channels, time frame]
+        mask (Optional[torch.Tensor]): Binary mask to indicate padded value (0) or valid value (1).
+            Shape: [batch, 1, time frame],
+        epsilon (float): Constant value for stabilizing division.
+
+    Returns:
+        torch.Tensor: Signal to distortion ratio (in decibel).
+            Shape: [batch, speaker]
+    """
+    ref_pow = _power(reference, mask)
+    err_pow = _power(estimate - reference, mask)
+    return 10 * torch.log10(ref_pow) - 10 * torch.log10(err_pow)
+
+
+def si_sdr(
         estimate: torch.Tensor,
         reference: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         epsilon: float = 1e-8
 ) -> torch.Tensor:
-    """Computes source-to-distortion ratio.
+    """Computes scale-invariant signal-to-distortion ratio. (in decibel).
 
     1. scale the reference signal with power(s_est * s_ref) / powr(s_ref * s_ref)
-    2. compute SNR between adjusted estimate and reference.
+    2. compute SDR between adjusted estimate and reference.
 
     Args:
         estimate (torch.Tensor): Estimtaed signal.
@@ -26,53 +61,43 @@ def sdr(
         epsilon (float): constant value used to stabilize division.
 
     Returns:
-        torch.Tensor: scale-invariant source-to-distortion ratio.
+        torch.Tensor: Scale-invariant source-to-distortion ratio. (in decibel)
         Shape: [batch, speaker]
 
     References:
-        - Single-channel multi-speaker separation using deep clustering
-          Y. Isik, J. Le Roux, Z. Chen, S. Watanabe, and J. R. Hershey,
+        - SDR - half-baked or well done?
+          J. Le Roux, S. Wisdom, H. Erdogan and J. R. Hershey
+          https://arxiv.org/abs/1811.02508
         - Conv-TasNet: Surpassing Ideal Time--Frequency Magnitude Masking for Speech Separation
-          Luo, Yi and Mesgarani, Nima
+          Y. Luo and N. Mesgarani
           https://arxiv.org/abs/1809.07454
 
     Notes:
-        This function is tested to produce the exact same result as
+        This implementation is based on the following code
         https://github.com/naplab/Conv-TasNet/blob/e66d82a8f956a69749ec8a4ae382217faa097c5c/utility/sdr.py#L34-L56
     """
-    reference_pow = reference.pow(2).mean(axis=2, keepdim=True)
-    mix_pow = (estimate * reference).mean(axis=2, keepdim=True)
-    scale = mix_pow / (reference_pow + epsilon)
+    estimate = estimate - (estimate * mask).mean(axis=2, keepdim=True)
+    reference = reference - (reference * mask).mean(axis=2, keepdim=True)
 
-    reference = scale * reference
-    error = estimate - reference
+    ref_pow = _power(reference, mask)
+    mix_pow = _power((estimate * reference), mask)
 
-    reference_pow = reference.pow(2)
-    error_pow = error.pow(2)
-
-    if mask is None:
-        reference_pow = reference_pow.mean(axis=2)
-        error_pow = error_pow.mean(axis=2)
-    else:
-        denom = mask.sum(axis=2)
-        reference_pow = (mask * reference_pow).sum(axis=2) / denom
-        error_pow = (mask * error_pow).sum(axis=2) / denom
-
-    return 10 * torch.log10(reference_pow) - 10 * torch.log10(error_pow)
+    reference = reference * (mix_pow / (ref_pow + epsilon))
+    return sdr(estimate, reference, mask)
 
 
 class PIT(torch.nn.Module):
-    """Applies utterance-level speaker permutation
+    """Applies utterance-level source permutation
 
     Computes the maxium possible value of the given utility function
-    over the permutations of the speakers.
+    over the permutations of the sources.
 
     Args:
         utility_func (function):
             Function that computes the utility (opposite of loss) with signature of
             (extimate: torch.Tensor, reference: torch.Tensor) -> torch.Tensor
-            where input Tensors are shape of [batch, speakers, frame] and
-            the output Tensor is shape of [batch, speakers].
+            where input Tensors are shape of [batch, sources, frame] and
+            the output Tensor is shape of [batch, sources].
 
     References:
         - Multi-talker Speech Separation with Utterance-level Permutation Invariant Training of
@@ -96,40 +121,41 @@ class PIT(torch.nn.Module):
 
         Args:
             estimate (torch.Tensor): Estimated source signals.
-                Shape: [bacth, speakers, time frame]
+                Shape: [bacth, sources, time frame]
             reference (torch.Tensor): Reference (original) source signals.
-                Shape: [batch, speakers, time frame]
+                Shape: [batch, sources, time frame]
             mask (Optional[torch.Tensor]): Binary mask to indicate padded value (0) or valid value (1).
                 Shape: [batch, 1, time frame]
             epsilon (float): constant value used to stabilize division.
 
         Returns:
-            torch.Tensor: Maximum criterion over the speaker permutation.
+            torch.Tensor: Maximum criterion over the source permutation.
                 Shape: [batch, ]
         """
         assert estimate.shape == reference.shape
 
-        batch_size, num_speakers = reference.shape[:2]
-        num_permute = math.factorial(num_speakers)
+        batch_size, num_sources = reference.shape[:2]
+        num_permute = math.factorial(num_sources)
 
         util_mat = torch.zeros(
             batch_size, num_permute, dtype=estimate.dtype, device=estimate.device
         )
-        for i, idx in enumerate(permutations(range(num_speakers))):
+        for i, idx in enumerate(permutations(range(num_sources))):
             util = self.utility_func(estimate, reference[:, idx, :], mask=mask, epsilon=epsilon)
-            util_mat[:, i] = util.mean(dim=1)  # take the average over speaker dimension
+            util_mat[:, i] = util.mean(dim=1)  # take the average over source dimension
         return util_mat.max(dim=1).values
 
 
 _sdr_pit = PIT(utility_func=sdr)
+_si_sdr_pit = PIT(utility_func=si_sdr)
 
 
-def sdr_pit(
+def si_sdr_pit(
         estimate: torch.Tensor,
         reference: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         epsilon: float = 1e-8):
-    """Computes scale-invariant source-to-distortion ratio.
+    """Computes the minimum SDR over source permutations
 
     1. adjust both estimate and reference to have 0-mean
     2. scale the reference signal with power(s_est * s_ref) / powr(s_ref * s_ref)
@@ -137,20 +163,25 @@ def sdr_pit(
 
     Args:
         estimate (torch.Tensor): Estimtaed signal.
-            Shape: [batch, speakers (can be 1), time frame]
+            Shape: [batch, sources (can be 1), time frame]
         reference (torch.Tensor): Reference signal.
-            Shape: [batch, speakers, time frame]
+            Shape: [batch, sources, time frame]
         mask (Optional[torch.Tensor]): Binary mask to indicate padded value (0) or valid value (1).
             Shape: [batch, 1, time frame]
         epsilon (float): constant value used to stabilize division.
 
     Returns:
         torch.Tensor: scale-invariant source-to-distortion ratio.
-        Shape: [batch, speaker]
+        Shape: [batch, source]
 
     References:
-        - Single-channel multi-speaker separation using deep clustering
-          Y. Isik, J. Le Roux, Z. Chen, S. Watanabe, and J. R. Hershey,
+        - Multi-talker Speech Separation with Utterance-level Permutation Invariant Training of
+          Deep Recurrent Neural Networks
+          Morten Kolbæk, Dong Yu, Zheng-Hua Tan and Jesper Jensen
+          https://arxiv.org/abs/1703.06284
+        - SDR - half-baked or well done?
+          J. Le Roux, S. Wisdom, H. Erdogan and J. R. Hershey
+          https://arxiv.org/abs/1811.02508
         - Conv-TasNet: Surpassing Ideal Time--Frequency Magnitude Masking for Speech Separation
           Luo, Yi and Mesgarani, Nima
           https://arxiv.org/abs/1809.07454
@@ -160,7 +191,7 @@ def sdr_pit(
         *when the inputs have 0-mean*
         https://github.com/naplab/Conv-TasNet/blob/e66d82a8f956a69749ec8a4ae382217faa097c5c/utility/sdr.py#L107-L153
     """
-    return _sdr_pit(estimate, reference, mask, epsilon)
+    return _si_sdr_pit(estimate, reference, mask, epsilon)
 
 
 def sdri(

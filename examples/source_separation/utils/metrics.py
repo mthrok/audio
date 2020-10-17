@@ -153,12 +153,13 @@ class PIT(torch.nn.Module):
         num_permute = math.factorial(num_sources)
 
         util_mat = torch.zeros(
-            batch_size, num_permute, dtype=estimate.dtype, device=estimate.device
+            num_permute, batch_size, num_sources, dtype=estimate.dtype, device=estimate.device
         )
         for i, idx in enumerate(permutations(range(num_sources))):
-            util = self.utility_func(estimate, reference[:, idx, :], mask=mask)
-            util_mat[:, i] = util.mean(dim=1)  # take the average over source dimension
-        return util_mat.max(dim=1).values
+            util_mat[i] = self.utility_func(estimate, reference[:, idx, :], mask=mask)
+        mean_utils = util_mat.mean(dim=2)  # take the average over source dimension
+        indices = mean_utils.max(dim=0).indices
+        return torch.gather(util_mat, dim=1, index=indices)
 
 
 _sdr_pit = PIT(utility_func=sdr)
@@ -180,8 +181,8 @@ def si_sdr_pit(
             Shape: [batch, 1, time frame]
 
     Returns:
-        torch.Tensor: scale-invariant source-to-distortion ratio.
-        Shape: [batch, source]
+        torch.Tensor: The maximum SI-SDR over source permutations.
+            Shape: [batch, source]
 
     References:
         - Multi-talker Speech Separation with Utterance-level Permutation Invariant Training of
@@ -223,7 +224,7 @@ def sdr_pit(
             Shape: [batch, 1, time frame]
 
     Returns:
-        torch.Tensor: Improved SDR. Shape: [batch, ]
+        torch.Tensor: The maximum SDR over source permutations. Shape: [batch, sources]
 
     References:
         - Multi-talker Speech Separation with Utterance-level Permutation Invariant Training of
@@ -234,7 +235,7 @@ def sdr_pit(
           Luo, Yi and Mesgarani, Nima
           https://arxiv.org/abs/1809.07454
     """
-    return _sdr_pit(estimate, reference, mask=mask)  # [batch, ]
+    return _sdr_pit(estimate, reference, mask=mask)
 
 
 def sdri(
@@ -256,16 +257,14 @@ def sdri(
             Shape: [batch, 1, time frame]
 
     Returns:
-        torch.Tensor: Improved SDR. Shape: [batch, ]
+        torch.Tensor: Improved SDR. Shape: [batch, sources]
 
     References:
         - Conv-TasNet: Surpassing Ideal Time--Frequency Magnitude Masking for Speech Separation
           Luo, Yi and Mesgarani, Nima
           https://arxiv.org/abs/1809.07454
     """
-    base_sdr = sdr(mix, reference, mask)  # [batch, sources]
-    sdr_ = sdr_pit(estimate, reference, mask)  # [batch, ]
-    return sdr_ - base_sdr.mean(dim=1)
+    return sdr_pit(estimate, reference, mask) - sdr(mix, reference, mask)
 
 
 def si_sdri(
@@ -287,13 +286,13 @@ def si_sdri(
             Shape: [batch, 1, time frame]
 
     Returns:
-        torch.Tensor: Improved SI-SDR. Shape: [batch, ]
+        torch.Tensor: Improved SI-SDR. Shape: [batch, sources]
 
     References:
         - Conv-TasNet: Surpassing Ideal Time--Frequency Magnitude Masking for Speech Separation
           Luo, Yi and Mesgarani, Nima
           https://arxiv.org/abs/1809.07454
     """
-    base_si_sdr = si_sdr(mix, reference, mask)  # [batch, sources]
-    si_sdr_ = si_sdr_pit(estimate, reference, mask)  # [batch, ]
-    return si_sdr_ - base_si_sdr.mean(dim=1)
+    print(si_sdr_pit(estimate, reference, mask).shape)
+    print(si_sdr(mix, reference, mask).shape)
+    return si_sdr_pit(estimate, reference, mask) - si_sdr(mix, reference, mask)

@@ -17,6 +17,18 @@ def _power(
     return (mask * power).sum(axis=2, keepdim=keepdim) / denom
 
 
+def _normalize(
+        signal: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+):
+    if mask is not None:
+        signal = signal * mask
+    normalized = signal - signal.mean(axis=2, keepdim=True)
+    if mask is not None:
+        normalized = normalized * mask
+    return normalized
+
+
 def sdr(
         estimate: torch.Tensor,
         reference: torch.Tensor,
@@ -78,13 +90,15 @@ def si_sdr(
         This implementation is based on the following code
         https://github.com/naplab/Conv-TasNet/blob/e66d82a8f956a69749ec8a4ae382217faa097c5c/utility/sdr.py#L34-L56
     """
-    estimate = estimate - (estimate * mask).mean(axis=2, keepdim=True)
-    reference = reference - (reference * mask).mean(axis=2, keepdim=True)
+    estimate = _normalize(estimate, mask)
+    reference = _normalize(reference, mask)
 
     ref_pow = _power(reference, mask, keepdim=True)
     mix_pow = _power((estimate * reference), mask, keepdim=True)
 
-    reference = reference * (mix_pow / (ref_pow + epsilon))
+    scale = mix_pow / (ref_pow + epsilon)
+
+    reference = reference * scale
     return sdr(estimate, reference, mask)
 
 
@@ -227,7 +241,7 @@ def sdri(
         estimate: torch.Tensor,
         reference: torch.Tensor,
         mix: torch.Tensor,
-        mask: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Computes the improvement of SDR from mixture signal to separated signal
 
@@ -251,14 +265,14 @@ def sdri(
     """
     base_sdr = sdr(mix, reference, mask)  # [batch, sources]
     sdr_ = sdr_pit(estimate, reference, mask)  # [batch, ]
-    return (sdr_.unsqueeze(1) - base_sdr).mean(dim=1)
+    return sdr_ - base_sdr.mean(dim=1)
 
 
 def si_sdri(
     estimate: torch.Tensor,
     reference: torch.Tensor,
     mix: torch.Tensor,
-    mask: torch.Tensor
+    mask: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Compute the improvement of scale-invariant SDR from mixture signal to separated signal
 
@@ -269,7 +283,7 @@ def si_sdri(
             Shape: [batch, speakers, time frame]
         mix (torch.Tensor): Mixed souce signals, from which the setimated signals were generated.
             Shape: [batch, speakers == 1, time frame]
-        mask (torch.Tensor): Mask to indicate padded value (0) or valid value (1).
+        mask (torch.Tensor, optional): Mask to indicate padded value (0) or valid value (1).
             Shape: [batch, 1, time frame]
 
     Returns:
@@ -282,4 +296,4 @@ def si_sdri(
     """
     base_si_sdr = si_sdr(mix, reference, mask)  # [batch, sources]
     si_sdr_ = si_sdr_pit(estimate, reference, mask)  # [batch, ]
-    return (si_sdr_.unsqueeze(1) - base_si_sdr).mean(dim=1)
+    return si_sdr_ - base_si_sdr.mean(dim=1)

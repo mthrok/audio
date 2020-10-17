@@ -1,5 +1,5 @@
 import math
-from typing import Optional
+from typing import Optional, Tuple
 from itertools import permutations
 
 import torch
@@ -155,11 +155,7 @@ def si_sdr_pit(
         reference: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         epsilon: float = 1e-8):
-    """Computes the minimum SDR over source permutations
-
-    1. adjust both estimate and reference to have 0-mean
-    2. scale the reference signal with power(s_est * s_ref) / powr(s_ref * s_ref)
-    3. compute SNR between adjusted estimate and reference.
+    """Computes the maximum SI-SDR over source permutations
 
     Args:
         estimate (torch.Tensor): Estimtaed signal.
@@ -194,18 +190,13 @@ def si_sdr_pit(
     return _si_sdr_pit(estimate, reference, mask, epsilon)
 
 
-def sdri(
+def sdr_pit(
         estimate: torch.Tensor,
         reference: torch.Tensor,
-        mix: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         epsilon: float = 1e-8,
 ) -> torch.Tensor:
-    """Compute the improvement of SDR (SDRi).
-
-    This function compute how much SDR is improved if the estimation is changed from
-    the original mixture signal to the actual estimated source signals. That is,
-    ``SDR(estimate, reference) - SDR(mix, reference)``.
+    """Computes the maximum SDR over source permutations.
 
     For computing ``SDR(estimate, reference)``, PIT (permutation invariant training) is applied,
     so that best combination of sources between the reference signals and the esimate signals
@@ -216,11 +207,42 @@ def sdri(
             Shape: [batch, speakers, time frame]
         reference (torch.Tensor): Reference (original) source signals.
             Shape: [batch, speakers, time frame]
-        mix (torch.Tensor): Mixed souce signals, from which the setimated signals were generated.
-            Shape: [batch, speakers == 1, time frame]
         mask (Optional[torch.Tensor]): Binary mask to indicate padded value (0) or valid value (1).
             Shape: [batch, 1, time frame]
         epsilon (float): constant value used to stabilize division.
+
+    Returns:
+        torch.Tensor: Improved SDR. Shape: [batch, ]
+
+    References:
+        - Multi-talker Speech Separation with Utterance-level Permutation Invariant Training of
+          Deep Recurrent Neural Networks
+          Morten Kolbæk, Dong Yu, Zheng-Hua Tan and Jesper Jensen
+          https://arxiv.org/abs/1703.06284
+        - Conv-TasNet: Surpassing Ideal Time--Frequency Magnitude Masking for Speech Separation
+          Luo, Yi and Mesgarani, Nima
+          https://arxiv.org/abs/1809.07454
+    """
+    return _sdr_pit(estimate, reference, mask=mask, epsilon=epsilon)  # [batch, ]
+
+
+def sdri(
+        estimate: torch.Tensor,
+        reference: torch.Tensor,
+        mix: torch.Tensor,
+        mask: torch.Tensor,
+) -> torch.Tensor:
+    """Computes the improvement of SDR from mixture signal to separated signal
+
+    Args:
+        estimate (torch.Tensor): Estimated source signals.
+            Shape: [batch, speakers, time frame]
+        reference (torch.Tensor): Reference (original) source signals.
+            Shape: [batch, speakers, time frame]
+        mix (torch.Tensor): Mixed souce signals, from which the setimated signals were generated.
+            Shape: [batch, speakers == 1, time frame]
+        mask (torch.Tensor): Mask to indicate padded value (0) or valid value (1).
+            Shape: [batch, 1, time frame]
 
     Returns:
         torch.Tensor: Improved SDR. Shape: [batch, ]
@@ -230,6 +252,33 @@ def sdri(
           Luo, Yi and Mesgarani, Nima
           https://arxiv.org/abs/1809.07454
     """
-    sdr_ = sdr_pit(estimate, reference, mask=mask, epsilon=epsilon)  # [batch, ]
-    base_sdr = sdr(mix, reference, mask=mask, epsilon=epsilon)  # [batch, speaker]
-    return (sdr_.unsqueeze(1) - base_sdr).mean(dim=1)
+    return sdr_pit(estimate, reference, mask) - sdr(mix, reference, mask)
+
+
+def si_sdri(
+    estimate: torch.Tensor,
+    reference: torch.Tensor,
+    mix: torch.Tensor,
+    mask: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Compute the improvement of scale-invariant SDR from mixture signal to separated signal
+
+    Args:
+        estimate (torch.Tensor): Estimated source signals.
+            Shape: [batch, speakers, time frame]
+        reference (torch.Tensor): Reference (original) source signals.
+            Shape: [batch, speakers, time frame]
+        mix (torch.Tensor): Mixed souce signals, from which the setimated signals were generated.
+            Shape: [batch, speakers == 1, time frame]
+        mask (torch.Tensor): Mask to indicate padded value (0) or valid value (1).
+            Shape: [batch, 1, time frame]
+
+    Returns:
+        torch.Tensor: Improved SI-SDR. Shape: [batch, ]
+
+    References:
+        - Conv-TasNet: Surpassing Ideal Time--Frequency Magnitude Masking for Speech Separation
+          Luo, Yi and Mesgarani, Nima
+          https://arxiv.org/abs/1809.07454
+    """
+    return si_sdr_pit(estimate, reference, mask) - si_sdr(mix, reference, mask)

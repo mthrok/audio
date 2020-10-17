@@ -1,5 +1,4 @@
 import time
-from typing import Tuple
 from collections import namedtuple
 
 import torch
@@ -9,49 +8,15 @@ from utils import dist_utils, metrics
 
 _LG = dist_utils.getLogger(__name__)
 
-Metric = namedtuple("SNR", ["si_snri", "sdri"])
-Metric.__str__ = (
-    lambda self: f"SI-SNRi: {self.si_snri:10.3e}, SDRi: {self.sdri:10.3e}"
+TrainMetric = namedtuple("TrainMetric", ["si_snr"])
+TrainMetric.__str__ = (
+    lambda self: f"SI-SNR: {self.si_snr:10.3e}"
 )
 
-
-def si_sdr_improvement(
-    estimate: torch.Tensor,
-    reference: torch.Tensor,
-    mix: torch.Tensor,
-    mask: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Compute the improvement of scale-invariant SDR. (SI-SNRi) and bare SDR (SDRi).
-
-    Args:
-        estimate (torch.Tensor): Estimated source signals.
-            Shape: [batch, speakers, time frame]
-        reference (torch.Tensor): Reference (original) source signals.
-            Shape: [batch, speakers, time frame]
-        mix (torch.Tensor): Mixed souce signals, from which the setimated signals were generated.
-            Shape: [batch, speakers == 1, time frame]
-        mask (torch.Tensor): Mask to indicate padded value (0) or valid value (1).
-            Shape: [batch, 1, time frame]
-
-
-    Returns:
-        torch.Tensor: Improved SI-SDR. Shape: [batch, ]
-        torch.Tensor: Absolute SI-SDR. Shape: [batch, ]
-
-    References:
-        - Conv-TasNet: Surpassing Ideal Time--Frequency Magnitude Masking for Speech Separation
-          Luo, Yi and Mesgarani, Nima
-          https://arxiv.org/abs/1809.07454
-    """
-    with torch.no_grad():
-        sdri = metrics.sdri(estimate, reference, mix, mask=mask)
-
-    estimate = estimate - estimate.mean(axis=2, keepdim=True)
-    reference = reference - reference.mean(axis=2, keepdim=True)
-    mix = mix - mix.mean(axis=2, keepdim=True)
-
-    si_sdri = metrics.sdri(estimate, reference, mix, mask=mask)
-    return si_sdri, sdri
+EvalMetric = namedtuple("EvalMetric", ["si_snri", "sdri"])
+EvalMetric.__str__ = (
+    lambda self: f"SI-SNRi: {self.si_snri:10.3e}, SDRi: {self.sdri: 10.3e}"
+)
 
 
 class OccasionalLogger:
@@ -109,12 +74,9 @@ class Trainer:
             mask = batch.mask.to(self.device)
 
             estimate = self.model(mix)
+            si_sdr = metrics.si_sdr_pit(estimate, src, mask).mean()
 
-            si_snri, sdri = si_sdr_improvement(estimate, src, mix, mask)
-            si_snri = si_snri.mean()
-            sdri = sdri.mean()
-
-            loss = -si_snri
+            loss = -si_sdr
             self.optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(
@@ -122,7 +84,7 @@ class Trainer:
             )
             self.optimizer.step()
 
-            metric = Metric(si_snri.item(), sdri.item())
+            metric = TrainMetric(si_sdr.item())
             logger.log(metric, progress=i / num_batches, force=i == num_batches)
 
             if self.debug:
@@ -148,8 +110,8 @@ class Trainer:
             mask = batch.mask.to(self.device)
 
             estimate = self.model(mix)
-
-            si_snri, sdri = si_sdr_improvement(estimate, src, mix, mask)
+            si_snri = metrics.si_sdri(estimate, src, mix, mask)
+            sdri = metrics.sdri(estimate, src, mix, mask)
 
             total_si_snri += si_snri.sum()
             total_sdri += sdri.sum()
@@ -161,5 +123,5 @@ class Trainer:
         dist.all_reduce(total_sdri, dist.ReduceOp.SUM)
 
         num_samples = len(loader.dataset)
-        metric = Metric(total_si_snri.item() / num_samples, total_sdri.item() / num_samples)
+        metric = EvalMetric(total_si_snri.item() / num_samples, total_sdri.item() / num_samples)
         return metric

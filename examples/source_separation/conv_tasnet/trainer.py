@@ -8,9 +8,9 @@ from utils import dist_utils, metrics
 
 _LG = dist_utils.getLogger(__name__)
 
-TrainMetric = namedtuple("TrainMetric", ["si_snr"])
+TrainMetric = namedtuple("TrainMetric", ["si_snr", "si_snri", "sdri"])
 TrainMetric.__str__ = (
-    lambda self: f"SI-SNR: {self.si_snr:10.3e}"
+    lambda self: f"SI-SNR: {self.si_snr:10.3e}, SI-SNRi: {self.si_snri:10.3e}, SDRi: {self.sdri: 10.3e}"
 )
 
 EvalMetric = namedtuple("EvalMetric", ["si_snri", "sdri"])
@@ -76,6 +76,10 @@ class Trainer:
             estimate = self.model(mix)
             si_sdr = metrics.si_sdr_pit(estimate, src, mask).mean()
 
+            with torch.no_grad():
+                si_sdri = metrics.si_sdri(estimate, src, mix, mask).mean()
+                sdri = metrics.sdri(estimate, src, mix, mask).mean()
+
             loss = -si_sdr
             self.optimizer.zero_grad()
             loss.backward()
@@ -84,7 +88,7 @@ class Trainer:
             )
             self.optimizer.step()
 
-            metric = TrainMetric(si_sdr.item())
+            metric = TrainMetric(si_sdr.item(), si_sdri.item(), sdri.item())
             logger.log(metric, progress=i / num_batches, force=i == num_batches)
 
             if self.debug:

@@ -7,12 +7,14 @@ import torch
 
 def _power(
         signal: torch.Tensor,
-        mask: Optional[torch.Tensor] = None):
+        mask: Optional[torch.Tensor] = None,
+        keepdim: bool = False,
+):
     power = signal.pow(2)
     if mask is None:
-        return power.mean(axis=2)
-    denom = mask.sum(axis=2)
-    return (mask * power).sum(axis=2) / denom
+        return power.mean(axis=2, keepdim=keepdim)
+    denom = mask.sum(axis=2, keepdim=keepdim)
+    return (mask * power).sum(axis=2, keepdim=keepdim) / denom
 
 
 def sdr(
@@ -79,8 +81,8 @@ def si_sdr(
     estimate = estimate - (estimate * mask).mean(axis=2, keepdim=True)
     reference = reference - (reference * mask).mean(axis=2, keepdim=True)
 
-    ref_pow = _power(reference, mask)
-    mix_pow = _power((estimate * reference), mask)
+    ref_pow = _power(reference, mask, keepdim=True)
+    mix_pow = _power((estimate * reference), mask, keepdim=True)
 
     reference = reference * (mix_pow / (ref_pow + epsilon))
     return sdr(estimate, reference, mask)
@@ -115,7 +117,6 @@ class PIT(torch.nn.Module):
             estimate: torch.Tensor,
             reference: torch.Tensor,
             mask: Optional[torch.Tensor] = None,
-            epsilon: float = 1e-8
     ) -> torch.Tensor:
         """Compute utterance-level PIT Loss
 
@@ -141,7 +142,7 @@ class PIT(torch.nn.Module):
             batch_size, num_permute, dtype=estimate.dtype, device=estimate.device
         )
         for i, idx in enumerate(permutations(range(num_sources))):
-            util = self.utility_func(estimate, reference[:, idx, :], mask=mask, epsilon=epsilon)
+            util = self.utility_func(estimate, reference[:, idx, :], mask=mask)
             util_mat[:, i] = util.mean(dim=1)  # take the average over source dimension
         return util_mat.max(dim=1).values
 
@@ -153,8 +154,7 @@ _si_sdr_pit = PIT(utility_func=si_sdr)
 def si_sdr_pit(
         estimate: torch.Tensor,
         reference: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        epsilon: float = 1e-8):
+        mask: Optional[torch.Tensor] = None):
     """Computes the maximum SI-SDR over source permutations
 
     Args:
@@ -164,7 +164,6 @@ def si_sdr_pit(
             Shape: [batch, sources, time frame]
         mask (Optional[torch.Tensor]): Binary mask to indicate padded value (0) or valid value (1).
             Shape: [batch, 1, time frame]
-        epsilon (float): constant value used to stabilize division.
 
     Returns:
         torch.Tensor: scale-invariant source-to-distortion ratio.
@@ -187,14 +186,13 @@ def si_sdr_pit(
         *when the inputs have 0-mean*
         https://github.com/naplab/Conv-TasNet/blob/e66d82a8f956a69749ec8a4ae382217faa097c5c/utility/sdr.py#L107-L153
     """
-    return _si_sdr_pit(estimate, reference, mask, epsilon)
+    return _si_sdr_pit(estimate, reference, mask)
 
 
 def sdr_pit(
         estimate: torch.Tensor,
         reference: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
-        epsilon: float = 1e-8,
 ) -> torch.Tensor:
     """Computes the maximum SDR over source permutations.
 
@@ -209,7 +207,6 @@ def sdr_pit(
             Shape: [batch, speakers, time frame]
         mask (Optional[torch.Tensor]): Binary mask to indicate padded value (0) or valid value (1).
             Shape: [batch, 1, time frame]
-        epsilon (float): constant value used to stabilize division.
 
     Returns:
         torch.Tensor: Improved SDR. Shape: [batch, ]
@@ -223,7 +220,7 @@ def sdr_pit(
           Luo, Yi and Mesgarani, Nima
           https://arxiv.org/abs/1809.07454
     """
-    return _sdr_pit(estimate, reference, mask=mask, epsilon=epsilon)  # [batch, ]
+    return _sdr_pit(estimate, reference, mask=mask)  # [batch, ]
 
 
 def sdri(
@@ -252,7 +249,9 @@ def sdri(
           Luo, Yi and Mesgarani, Nima
           https://arxiv.org/abs/1809.07454
     """
-    return sdr_pit(estimate, reference, mask) - sdr(mix, reference, mask)
+    base_sdr = sdr(mix, reference, mask)  # [batch, sources]
+    sdr_ = sdr_pit(estimate, reference, mask)  # [batch, ]
+    return (sdr_.unsqueeze(1) - base_sdr).mean(dim=1)
 
 
 def si_sdri(
@@ -281,4 +280,6 @@ def si_sdri(
           Luo, Yi and Mesgarani, Nima
           https://arxiv.org/abs/1809.07454
     """
-    return si_sdr_pit(estimate, reference, mask) - si_sdr(mix, reference, mask)
+    base_si_sdr = si_sdr(mix, reference, mask)  # [batch, sources]
+    si_sdr_ = si_sdr_pit(estimate, reference, mask)  # [batch, ]
+    return (si_sdr_.unsqueeze(1) - base_si_sdr).mean(dim=1)

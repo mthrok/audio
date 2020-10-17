@@ -19,7 +19,7 @@ The default training/model configurations follow the best non-causal implementat
  - Gradient clipping: maximum L2 norm of 5.0
  - Optimizer: Adam
  - Learning rate scheduling: Halved after 3 epochs of no improvement in validation accuracy.
- - Objective function: SI-SNRi
+ - Loss function: SI-SNR
  - Reported metrics: SI-SNRi, SDRi
  - Sample audio length: 4 seconds (randomized position)
  - Encoder/Decoder feature dimension (N): 512

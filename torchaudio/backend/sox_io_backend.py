@@ -1,4 +1,7 @@
 import os
+import sys
+import hashlib
+import logging
 from typing import Tuple, Optional
 
 import torch
@@ -8,6 +11,29 @@ from torchaudio._internal import (
 
 import torchaudio
 from .common import AudioMetaData
+
+
+logging.basicConfig(format='%(asctime)-15s [%(levelname)s]: %(message)s', level=logging.INFO)
+
+
+class DebuggWrapper:
+    def __init__(self, fileobj):
+        self.fileobj = fileobj
+        self.total = 0
+        self.hasher = hashlib.md5()
+
+    def read(self, size: int) -> bytes:
+        data = self.fileobj.read(size)
+        self.hasher.update(data)
+        self.total += len(data)
+        print(f'Read: {self.hasher.hexdigest()} {len(data)} / {size} ({self.total})', file=sys.stderr)
+        return data
+
+    def write(self, data: bytes):
+        self.hasher.update(data)
+        self.total += len(data)
+        print(f'Write: {self.hasher.hexdigest()} {len(data)} ({self.total})', file=sys.stderr)
+        self.fileobj.write(data)
 
 
 @_mod_utils.requires_module('torchaudio._torchaudio')
@@ -47,7 +73,7 @@ def info(
     """
     if not torch.jit.is_scripting():
         if hasattr(filepath, 'read'):
-            sinfo = torchaudio._torchaudio.get_info_fileobj(filepath, format)
+            sinfo = torchaudio._torchaudio.get_info_fileobj(DebuggWrapper(filepath), format)
             return AudioMetaData(*sinfo)
         filepath = os.fspath(filepath)
     sinfo = torch.ops.torchaudio.sox_io_get_info(filepath, format)
@@ -145,7 +171,7 @@ def load(
     if not torch.jit.is_scripting():
         if hasattr(filepath, 'read'):
             return torchaudio._torchaudio.load_audio_fileobj(
-                filepath, frame_offset, num_frames, normalize, channels_first, format)
+                DebuggWrapper(filepath), frame_offset, num_frames, normalize, channels_first, format)
         filepath = os.fspath(filepath)
     return torch.ops.torchaudio.sox_io_load_audio_file(
         filepath, frame_offset, num_frames, normalize, channels_first, format)
@@ -307,7 +333,8 @@ def save(
     if not torch.jit.is_scripting():
         if hasattr(filepath, 'write'):
             torchaudio._torchaudio.save_audio_fileobj(
-                filepath, src, sample_rate, channels_first, compression,
+                DebuggWrapper(filepath), src, sample_rate,
+                channels_first, compression,
                 format, encoding, bits_per_sample)
             return
         filepath = os.fspath(filepath)

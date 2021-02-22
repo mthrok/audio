@@ -1,0 +1,12 @@
+diff -ru base/src/formats.c custom/src/formats.c
+--- base/src/formats.c	2021-02-22 19:58:44.327951920 +0000
++++ custom/src/formats.c	2021-02-22 20:17:34.143300066 +0000
+@@ -546,7 +546,7 @@
+     lsx_fail("can't open input %s `%s': %s", type, ft->filename, ft->sox_errstr);
+     goto error;
+   }
+-
++  fprintf(stderr, "STARTREAD:\n  length: %d\n ", ft->signal.length);
+   /* Fill in some defaults: */
+   if (sox_precision(ft->encoding.encoding, ft->encoding.bits_per_sample))
+     ft->signal.precision = sox_precision(ft->encoding.encoding, ft->encoding.bits_per_sample);

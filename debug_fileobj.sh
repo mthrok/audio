@@ -33,8 +33,8 @@ debug_info() {
 }
 
 
-(debug_save &)
+# (debug_save &)
 (debug_load &)
-(debug_info &)
+# (debug_info &)
 
 # watch tail test/debug_fileobj/*/failure/log

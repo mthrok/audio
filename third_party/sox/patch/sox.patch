@@ -1,140 +1,16 @@
-diff -ru sox-14.4.2/src/formats.c debug/src/formats.c
---- sox-14.4.2/src/formats.c	2014-10-26 19:55:50.000000000 -0700
-+++ debug/src/formats.c	2021-02-22 16:01:02.833144070 -0800
-@@ -333,7 +333,11 @@
+See https://github.com/pytorch/audio/pull/1297
+diff -ru sox/src/formats.c sox/src/formats.c
+--- sox/src/formats.c	2014-10-26 19:55:50.000000000 -0700
++++ sox/src/formats.c	2021-02-22 16:01:02.833144070 -0800
+@@ -333,6 +333,10 @@
    assert(ft);
    if (!ft->fp)
      return sox_false;
 -  fstat(fileno((FILE*)ft->fp), &st);
 +  int fd = fileno((FILE*)ft->fp);
-+  fprintf(stderr, "* file descriptor %d\n", fd);
 +  if (fd < 0)
 +    return sox_false;
-+  fstat(fd, &st);
++  if (fstat(fd, &st) < 0)
++    return sox_false;
    return ((st.st_mode & S_IFMT) == S_IFREG);
  }
- 
-@@ -437,6 +441,7 @@
-     char               const * filetype)
- {
-   sox_format_t * ft = lsx_calloc(1, sizeof(*ft));
-+  fprintf(stderr, "* open_read - seekable [1]: %d\n", ft->seekable);
-   sox_format_handler_t const * handler;
-   char const * const io_types[] = {"file", "pipe", "file URL"};
-   char const * type = "";
-@@ -478,6 +483,7 @@
-       goto error;
-     }
-     ft->seekable = is_seekable(ft);
-+    fprintf(stderr, "* open_read - seekable [2]: %d\n", ft->seekable);
-   }
- 
-   if (!filetype) {
-@@ -542,10 +548,12 @@
- 
-   ft->priv = lsx_calloc(1, ft->handler.priv_size);
-   /* Read and write starters can change their formats. */
-+  fprintf(stderr, "* startread BEFORE:\n  length: %ld\n", ft->signal.length);
-   if (ft->handler.startread && (*ft->handler.startread)(ft) != SOX_SUCCESS) {
-     lsx_fail("can't open input %s `%s': %s", type, ft->filename, ft->sox_errstr);
-     goto error;
-   }
-+  fprintf(stderr, "* startread AFTER:\n  length: %d\n", ft->signal.length);
- 
-   /* Fill in some defaults: */
-   if (sox_precision(ft->encoding.encoding, ft->encoding.bits_per_sample))
-@@ -878,6 +886,7 @@
-       goto error;
-     }
-     ft->seekable = is_seekable(ft);
-+    fprintf(stderr, "* open_read - seekable [3]: %d\n", ft->seekable);
-   }
- 
-   ft->filetype = lsx_strdup(filetype);
-diff -ru sox-14.4.2/src/mp3.c debug/src/mp3.c
---- sox-14.4.2/src/mp3.c	2014-10-05 18:59:34.000000000 -0700
-+++ debug/src/mp3.c	2021-02-22 14:28:17.502391917 -0800
-@@ -363,11 +363,13 @@
- 
- static int startread(sox_format_t * ft)
- {
-+  unsigned debug_count = 0;
-+  fprintf(stderr, "* mp3 - startread [%d] length: %ld\n", ++debug_count, ft->signal.length);
-   priv_t *p = (priv_t *) ft->priv;
-   size_t ReadSize;
-   sox_bool ignore_length = ft->signal.length == SOX_IGNORE_LENGTH;
-   int open_library_result;
--
-+  fprintf(stderr, "* mp3 - startread: ignore_length: %d\n", ignore_length);
-   LSX_DLLIBRARY_OPEN(
-       p,
-       mad_dl,
-@@ -378,10 +380,13 @@
-   if (open_library_result)
-     return SOX_EOF;
- 
-+  fprintf(stderr, "* mp3 - startread [%d] length: %d\n", ++debug_count, ft->signal.length);
-   p->mp3_buffer_size = sox_globals.bufsiz;
-   p->mp3_buffer = lsx_malloc(p->mp3_buffer_size);
- 
-   ft->signal.length = SOX_UNSPEC;
-+  fprintf(stderr, "* mp3 - startread [%d] length: %d\n", ++debug_count, ft->signal.length);
-+  fprintf(stderr, "* mp3 - startread: seekable: %d\n", ft->seekable);
-   if (ft->seekable) {
- #ifdef USING_ID3TAG
-     read_comments(ft);
-@@ -391,7 +396,7 @@
-       if (!ignore_length)
-         ft->signal.length = mp3_duration_ms(ft);
-   }
--
-+  fprintf(stderr, "* mp3 - startread [%d] length: %d\n", ++debug_count, ft->signal.length);
-   p->mad_stream_init(&p->Stream);
-   p->mad_frame_init(&p->Frame);
-   p->mad_synth_init(&p->Synth);
-@@ -406,7 +411,7 @@
-   ReadSize = lsx_readbuf(ft, p->mp3_buffer, p->mp3_buffer_size);
-   if (ReadSize != p->mp3_buffer_size && lsx_error(ft))
-     return SOX_EOF;
--
-+  fprintf(stderr, "* mp3 - startread [%d] length: %d\n", ++debug_count, ft->signal.length);
-   p->mad_stream_buffer(&p->Stream, p->mp3_buffer, ReadSize);
- 
-   /* Find a valid frame before starting up.  This makes sure
-@@ -435,13 +440,13 @@
-        */
-       p->Stream.error = 0;
-   }
--
-+  fprintf(stderr, "* mp3 - startread [%d] length: %d\n", ++debug_count, ft->signal.length);
-   if (p->Stream.error)
-   {
-       lsx_fail_errno(ft,SOX_EOF,"No valid MP3 frame found");
-       return SOX_EOF;
-   }
--
-+  fprintf(stderr, "* mp3 - startread [%d] length: %d\n", ++debug_count, ft->signal.length);
-   switch(p->Frame.header.mode)
-   {
-       case MAD_MODE_SINGLE_CHANNEL:
-@@ -454,9 +459,9 @@
-           lsx_fail_errno(ft, SOX_EFMT, "Cannot determine number of channels");
-           return SOX_EOF;
-   }
--
-+  fprintf(stderr, "* mp3 - startread [%d] length: %d\n", ++debug_count, ft->signal.length);
-   p->FrameCount=1;
--
-+  fprintf(stderr, "* mp3 - startread [%d] length: %d\n", ++debug_count, ft->signal.length);
-   p->mad_timer_add(&p->Timer,p->Frame.header.duration);
-   p->mad_synth_frame(&p->Synth,&p->Frame);
-   ft->signal.precision = MP3_MAD_PRECISION;
-@@ -467,7 +472,7 @@
-     ft->signal.length = (uint64_t)(ft->signal.length * .001 * ft->signal.rate + .5);
-     ft->signal.length *= ft->signal.channels;  /* Keep separate from line above! */
-   }
--
-+  fprintf(stderr, "* mp3 - startread [%d] length: %d\n", ++debug_count, ft->signal.length);
-   p->cursamp = 0;
- 
-   return SOX_SUCCESS;

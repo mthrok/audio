@@ -177,12 +177,10 @@ def griffinlim(
     # randomly initialize the phase
     batch, freq, frames = specgram.size()
     if rand_init:
-        angles = 2 * math.pi * torch.rand(batch, freq, frames)
+        angles = torch.rand(batch, freq, frames, dtype=torch.cfloat, device=specgram.device)
     else:
-        angles = torch.zeros(batch, freq, frames)
-    angles = torch.stack([angles.cos(), angles.sin()], dim=-1) \
-        .to(dtype=specgram.dtype, device=specgram.device)
-    specgram = specgram.unsqueeze(-1).expand_as(angles)
+        angles = torch.zeros(batch, freq, frames, dtype=torch.cfloat, device=specgram.device)
+        angles.real[:] = 1
 
     # And initialize the previous iterate to 0
     rebuilt = torch.tensor(0.)
@@ -197,29 +195,27 @@ def griffinlim(
                               hop_length=hop_length,
                               win_length=win_length,
                               window=window,
-                              length=length).float()
+                              length=length)
 
         # Rebuild the spectrogram
-        rebuilt = torch.view_as_real(
-            torch.stft(
-                input=inverse,
-                n_fft=n_fft,
-                hop_length=hop_length,
-                win_length=win_length,
-                window=window,
-                center=True,
-                pad_mode='reflect',
-                normalized=False,
-                onesided=True,
-                return_complex=True,
-            )
+        rebuilt = torch.stft(
+            input=inverse,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            win_length=win_length,
+            window=window,
+            center=True,
+            pad_mode='reflect',
+            normalized=False,
+            onesided=True,
+            return_complex=True,
         )
 
         # Update our phase estimates
         angles = rebuilt
         if momentum:
             angles = angles - tprev.mul_(momentum / (1 + momentum))
-        angles = angles.div(complex_norm(angles).add(1e-16).unsqueeze(-1).expand_as(angles))
+        angles = angles.div(angles.abs().add(1e-16))
 
     # Return the final phase estimates
     waveform = torch.istft(specgram * angles,

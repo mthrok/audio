@@ -179,8 +179,7 @@ def griffinlim(
     if rand_init:
         angles = torch.rand(batch, freq, frames, dtype=torch.cfloat, device=specgram.device)
     else:
-        angles = torch.zeros(batch, freq, frames, dtype=torch.cfloat, device=specgram.device)
-        angles.real[:] = 1
+        angles = torch.full([batch, freq, frames], 1, dtype=torch.cfloat, device=specgram.device)
 
     # And initialize the previous iterate to 0
     rebuilt = torch.tensor(0.)
